@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Condition Calculator</title>
+<style>
+  :root {
+    --bg: #f5f6f4;
+    --card: #ffffff;
+    --text: #1d2420;
+    --muted: #5b6660;
+    --border: #d7ddd9;
+    --accent: #2f6b4f;
+    --accent-soft: #e3efe8;
+    --warn-bg: #fff4e0;
+    --warn-text: #7a4b00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141816;
+      --card: #1e2421;
+      --text: #e6ebe8;
+      --muted: #9aa7a0;
+      --border: #333d38;
+      --accent: #6fbf95;
+      --accent-soft: #24352c;
+      --warn-bg: #3a2d14;
+      --warn-text: #f3cf8a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.45;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 20px 16px 48px; }
+  header h1 { margin: 0 0 4px; font-size: 1.6rem; }
+  header p { margin: 0; color: var(--muted); }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    margin-top: 18px;
+  }
+  .card h2 { margin: 0 0 4px; font-size: 1.15rem; }
+  .card .sub { margin: 0 0 14px; color: var(--muted); font-size: 0.9rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+  label.field { display: flex; flex-direction: column; font-size: 0.9rem; gap: 4px; }
+  input[type=number] {
+    font: inherit; padding: 8px 10px; width: 140px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text);
+  }
+  .age-note { font-size: 0.95rem; }
+  .warn {
+    background: var(--warn-bg); color: var(--warn-text);
+    padding: 10px 12px; border-radius: 8px; margin-top: 12px;
+  }
+  .component { margin-top: 16px; }
+  .component-head { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 6px; }
+  .component-head span.w { color: var(--muted); font-weight: 500; font-size: 0.9rem; }
+  .options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  @media (max-width: 640px) { .options { grid-template-columns: repeat(2, 1fr); } }
+  .opt input { position: absolute; opacity: 0; pointer-events: none; }
+  .opt span {
+    display: block; height: 100%;
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; cursor: pointer; font-size: 0.88rem;
+  }
+  .opt span b { display: block; font-size: 0.95rem; }
+  .opt span small { color: var(--muted); }
+  .opt input:checked + span { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent); }
+  .opt input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .toggle { display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; }
+  .toggle input { width: 20px; height: 20px; accent-color: var(--accent); }
+  .result { position: sticky; bottom: 0; }
+  .result-main { display: flex; flex-wrap: wrap; gap: 24px; align-items: baseline; }
+  .rating { font-size: 2rem; font-weight: 700; color: var(--accent); }
+  .score { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; }
+  .buttons { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  button {
+    font: inherit; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--accent); background: var(--accent); color: var(--card);
+  }
+  button.secondary { background: transparent; color: var(--accent); }
+  .hidden { display: none; }
+  footer { margin-top: 28px; color: var(--muted); font-size: 0.82rem; }
+  .scale td { padding: 4px 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Condition Calculator</h1>
+    <p>Whatcom County Assessor's Office. For residential properties over 12 years actual age.</p>
+  </header>
+
+  <section class="card">
+    <h2>Property age</h2>
+    <div class="row">
+      <label class="field">Year built
+        <input type="number" id="yearBuilt" inputmode="numeric" placeholder="e.g. 1998">
+      </label>
+      <label class="field">Assessment year
+        <input type="number" id="assessYear" inputmode="numeric">
+      </label>
+      <div class="age-note" id="ageNote"></div>
+    </div>
+    <div class="warn hidden" id="ageWarn">This calculator applies to properties over 12 years actual age. Use appraiser judgment for newer properties.</div>
+  </section>
+
+  <section class="card" id="exteriorCard">
+    <h2>Exterior</h2>
+    <div id="exteriorComponents"></div>
+  </section>
+
+  <section class="card">
+    <label class="toggle"><input type="checkbox" id="useInterior"> Interior information available</label>
+    <div id="interiorBlock" class="hidden">
+      <h2 style="margin-top:12px">Interior</h2>
+      <div id="interiorComponents"></div>
+    </div>
+  </section>
+
+  <section class="card result" id="resultCard">
+    <div class="result-main">
+      <div><div class="sub" style="margin:0">Overall condition</div><div class="rating" id="rating">-</div></div>
+      <div class="score" id="scoreLine">Complete the selections above.</div>
+    </div>
+    <div class="buttons">
+      <button id="copyBtn" disabled>Copy summary</button>
+      <button id="resetBtn" class="secondary">Reset</button>
+    </div>
+  </section>
+
+  <footer>Guidance tool only. Final condition is the appraiser's determination.</footer>
+</div>
+
+<script>
+// ============================================================
+// SETTINGS: edit weights, options, and rating cutoffs here.
+// Weights within each section must add up to 100.
+// ============================================================
+const CONFIG = {
+  minActualAge: 13, // calculator applies to properties over 12 years
+  interiorShare: 0.5, // share of overall score when interior info is used
+
+  // Overall score at or above "min" gets that rating.
+  ratings: [
+    { min: 3.5, label: "Very Good" },
+    { min: 2.5, label: "Good" },
+    { min: 1.5, label: "Average" },
+    { min: 0,   label: "Fair/Poor" }
+  ],
+
+  exterior: [
+    { id: "roof", name: "Roof", weight: 30, options: [
+      { score: 4, label: "Very good", detail: "0-10 years" },
+      { score: 3, label: "Good", detail: "11-20 years" },
+      { score: 2, label: "Average", detail: "21-30 years" },
+      { score: 1, label: "Fair/Poor", detail: "31+ years or visibly worn" } ] },
+    { id: "windows", name: "Windows", weight: 20, options: [
+      { score: 4, label: "Very good", detail: "0-10 years" },
+      { score: 3, label: "Good", detail: "11-20 years" },
+      { score: 2, label: "Average", detail: "20+ years" },
+      { score: 1, label: "Fair/Poor", detail: "Visibly damaged" } ] },
+    { id: "extPaint", name: "Paint", weight: 25, options: [
+      { score: 4, label: "Very good", detail: "0-6 years" },
+      { score: 3, label: "Good", detail: "7-9 years" },
+      { score: 2, label: "Average", detail: "10+ years" },
+      { score: 1, label: "Fair/Poor", detail: "Visibly damaged" } ] },
+    { id: "additional", name: "Additional improvements", weight: 15, options: [
+      { score: 4, label: "High $", detail: "High cost or multiple items" },
+      { score: 3, label: "Some", detail: "Some improvements" },
+      { score: 2, label: "None", detail: "No improvements" },
+      { score: 1, label: "Negative", detail: "Negative items" } ] },
+    // Scored automatically from year built.
+    { id: "age", name: "Actual age", weight: 10, auto: true, ageBands: [
+      { maxAge: 19, score: 3, label: "Good", detail: "13-19 years" },
+      { maxAge: Infinity, score: 2, label: "Average", detail: "20+ years" } ] }
+  ],
+
+  interior: [
+    { id: "kitchen", name: "Kitchen", weight: 45, options: [
+      { score: 4, label: "Very good", detail: "Remodel" },
+      { score: 3, label: "Good", detail: "Updates" },
+      { score: 2, label: "Average", detail: "Original" },
+      { score: 1, label: "Fair", detail: "Visibly worn" } ] },
+    { id: "bath", name: "Bathroom", weight: 30, options: [
+      { score: 4, label: "Very good", detail: "Remodel" },
+      { score: 3, label: "Good", detail: "Updates" },
+      { score: 2, label: "Average", detail: "Original" },
+      { score: 1, label: "Fair", detail: "Visibly worn" } ] },
+    { id: "flooring", name: "Flooring", weight: 15, options: [
+      { score: 4, label: "Very good", detail: "0-5 years" },
+      { score: 3, label: "Good", detail: "6-10 years" },
+      { score: 2, label: "Average", detail: "11+ years" },
+      { score: 1, label: "Fair", detail: "Visibly worn" } ] },
+    { id: "intPaint", name: "Paint/other", weight: 10, options: [
+      { score: 4, label: "Very good", detail: "0-5 years" },
+      { score: 3, label: "Good", detail: "6-10 years" },
+      { score: 2, label: "Average", detail: "11+ years" },
+      { score: 1, label: "Fair", detail: "Visibly worn" } ] }
+  ]
+};
+// ============================================================
+
+const $ = id => document.getElementById(id);
+
+function renderSection(list, container) {
+  container.innerHTML = "";
+  list.forEach(c => {
+    const div = document.createElement("div");
+    div.className = "component";
+    let body;
+    if (c.auto) {
+      body = `<div class="sub" id="autoAge" style="margin:0">Filled in from year built.</div>`;
+    } else {
+      body = `<div class="options" role="radiogroup" aria-label="${c.name}">` +
+        c.options.map(o => `
+          <label class="opt">
+            <input type="radio" name="${c.id}" value="${o.score}">
+            <span><b>${o.label}</b><small>${o.detail}</small></span>
+          </label>`).join("") + `</div>`;
+    }
+    div.innerHTML = `<div class="component-head">${c.name}</div>${body}`;
+    container.appendChild(div);
+  });
+}
+
+function actualAge() {
+  const yb = parseInt($("yearBuilt").value, 10);
+  const ay = parseInt($("assessYear").value, 10);
+  if (!yb || !ay || yb > ay) return null;
+  return ay - yb;
+}
+
+function ageBand(age) {
+  const c = CONFIG.exterior.find(x => x.auto);
+  return c.ageBands.find(b => age <= b.maxAge);
+}
+
+function selected(c) {
+  const el = document.querySelector(`input[name="${c.id}"]:checked`);
+  if (!el) return null;
+  const score = Number(el.value);
+  return c.options.find(o => o.score === score);
+}
+
+function sectionScore(list, age) {
+  let total = 0, rows = [], complete = true;
+  list.forEach(c => {
+    let pick;
+    if (c.auto) {
+      pick = age != null && age >= CONFIG.minActualAge ? ageBand(age) : null;
+    } else {
+      pick = selected(c);
+    }
+    if (!pick) { complete = false; return; }
+    const contrib = pick.score * c.weight / 100;
+    total += contrib;
+    rows.push({ name: c.name, label: pick.label, detail: pick.detail, score: pick.score, weight: c.weight, contrib });
+  });
+  return { complete, total, rows };
+}
+
+function ratingFor(score) {
+  return CONFIG.ratings.find(r => score >= r.min - 1e-9).label;
+}
+
+let lastSummary = "";
+
+function update() {
+  const age = actualAge();
+  const tooNew = age != null && age < CONFIG.minActualAge;
+  $("ageNote").textContent = age != null ? `Actual age: ${age} years` : "";
+  $("ageWarn").classList.toggle("hidden", !tooNew);
+
+  const autoEl = $("autoAge");
+  if (autoEl) {
+    if (age == null) autoEl.textContent = "Filled in from year built.";
+    else if (tooNew) autoEl.textContent = "Not applicable: property is 12 years or newer.";
+    else { const b = ageBand(age); autoEl.textContent = `${age} years (${b.label})`; }
+  }
+
+  const useInt = $("useInterior").checked;
+  $("interiorBlock").classList.toggle("hidden", !useInt);
+
+  const ext = sectionScore(CONFIG.exterior, age);
+  const int = useInt ? sectionScore(CONFIG.interior, age) : null;
+  const complete = !tooNew && ext.complete && (!useInt || int.complete);
+
+  if (!complete) {
+    $("rating").textContent = "-";
+    $("scoreLine").textContent = tooNew ? "Property is 12 years or newer." : "Complete the selections above.";
+    $("copyBtn").disabled = true;
+    return;
+  }
+
+  const overall = useInt
+    ? ext.total * (1 - CONFIG.interiorShare) + int.total * CONFIG.interiorShare
+    : ext.total;
+  const rating = ratingFor(overall);
+
+  $("rating").textContent = rating;
+  $("scoreLine").textContent = useInt ? "Based on exterior and interior." : "Based on exterior only.";
+
+  const line = (s) => s.rows.map(r => `${r.name}: ${r.label} (${r.detail})`).join("; ");
+  lastSummary =
+    `Condition calculator: ${rating}\n` +
+    `Year built ${$("yearBuilt").value}, actual age ${age}\n` +
+    `Exterior: ${line(ext)}` +
+    (useInt ? `\nInterior: ${line(int)}` : "\nInterior: not available");
+  $("copyBtn").disabled = false;
+}
+
+function init() {
+  $("assessYear").value = new Date().getFullYear();
+  renderSection(CONFIG.exterior, $("exteriorComponents"));
+  renderSection(CONFIG.interior, $("interiorComponents"));
+  document.addEventListener("input", update);
+  document.addEventListener("change", update);
+  $("copyBtn").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(lastSummary);
+      $("copyBtn").textContent = "Copied";
+      setTimeout(() => $("copyBtn").textContent = "Copy summary", 1500);
+    } catch (e) { window.prompt("Copy this summary:", lastSummary); }
+  });
+  $("resetBtn").addEventListener("click", () => {
+    document.querySelectorAll("input[type=radio]").forEach(i => i.checked = false);
+    $("yearBuilt").value = "";
+    $("useInterior").checked = false;
+    update();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  update();
+}
+init();
+</script>
+</body>
+</html>
