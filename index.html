@@ -81,7 +81,10 @@
   .result { position: sticky; bottom: 0; }
   .result-main { display: flex; flex-wrap: wrap; gap: 24px; align-items: baseline; }
   .rating { font-size: 2rem; font-weight: 700; color: var(--accent); }
-  .score { color: var(--muted); }
+  .score { color: var(--muted); margin-top: 8px; }
+  .eff-block { display: flex; gap: 24px; flex-wrap: wrap; }
+  .eff-block.hidden { display: none; }
+  .eff { font-size: 1.5rem; font-weight: 700; }
   table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.9rem; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
   th { color: var(--muted); font-weight: 600; }
@@ -101,7 +104,7 @@
 <div class="wrap">
   <header>
     <h1>Condition Calculator</h1>
-    <p>Whatcom County Assessor's Office. For residential properties over 12 years actual age.</p>
+    <p>Whatcom County Assessor's Office. For residential properties over 12 years actual age. Effective ages follow the SFR Reval 6 guidelines.</p>
   </header>
 
   <section class="card">
@@ -134,8 +137,13 @@
   <section class="card result" id="resultCard">
     <div class="result-main">
       <div><div class="sub" style="margin:0">Overall condition</div><div class="rating" id="rating">-</div></div>
-      <div class="score" id="scoreLine">Complete the selections above.</div>
+      <div id="effBlock" class="hidden eff-block">
+        <div><div class="sub" style="margin:0">Effective age</div><div class="eff" id="effAge"></div></div>
+        <div><div class="sub" style="margin:0">Effective year built</div><div class="eff" id="effYear"></div></div>
+      </div>
     </div>
+    <div class="score" id="scoreLine">Complete the selections above.</div>
+    <div class="warn hidden" id="effWarn"></div>
     <div class="buttons">
       <button id="copyBtn" disabled>Copy summary</button>
       <button id="resetBtn" class="secondary">Reset</button>
@@ -154,12 +162,24 @@ const CONFIG = {
   minActualAge: 13, // calculator applies to properties over 12 years
   interiorShare: 0.5, // share of overall score when interior info is used
 
-  // Overall score at or above "min" gets that rating.
+  // Effective ages follow the Effective Age and Condition Guidelines
+  // (SFR, Reval 6). Those ages are based on this assessment year.
+  defaultAssessmentYear: 2027,
+
+  // Score bands, top down. "cond" groups the +, base and - ratings.
+  // A score between two bands of the same condition gets the base rating.
+  // effAge is [low, high] in years.
   ratings: [
-    { min: 3.5, label: "Very Good" },
-    { min: 2.5, label: "Good" },
-    { min: 1.5, label: "Average" },
-    { min: 0,   label: "Fair/Poor" }
+    { min: 3.80, max: 4.00, cond: "VG",   base: true,  code: "VGD",   label: "Very Good",  effAge: [8, 9] },
+    { min: 3.51, max: 3.79, cond: "VG",   base: false, code: "VG-",   label: "Very Good-", effAge: [10, 12] },
+    { min: 3.26, max: 3.50, cond: "GD",   base: false, code: "GD+",   label: "Good+",      effAge: [13, 13] },
+    { min: 2.80, max: 3.25, cond: "GD",   base: true,  code: "GD",    label: "Good",       effAge: [16, 16] },
+    { min: 2.51, max: 2.79, cond: "GD",   base: false, code: "GD-",   label: "Good-",      effAge: [19, 19] },
+    { min: 2.26, max: 2.50, cond: "AVG",  base: false, code: "AVG+",  label: "Average+",   effAge: [20, 20] },
+    { min: 1.80, max: 2.25, cond: "AVG",  base: true,  code: "AVG",   label: "Average",    effAge: [26, 26] },
+    { min: 1.51, max: 1.79, cond: "AVG",  base: false, code: "AVG-",  label: "Average-",   effAge: [31, 31] },
+    { min: 1.26, max: 1.50, cond: "FAIR", base: false, code: "FAIR+", label: "Fair+",      effAge: [32, 32] },
+    { min: 1.00, max: 1.25, cond: "FAIR", base: true,  code: "FAIR",  label: "Fair",       effAge: [35, 35] }
   ],
 
   exterior: [
@@ -273,9 +293,22 @@ function sectionScore(list, age) {
   return { complete, total, rows };
 }
 
+// A score inside a band gets that rating. A score that falls in a gap
+// between two bands gets the base (no +/-) rating of that condition.
 function ratingFor(score) {
-  return CONFIG.ratings.find(r => score >= r.min - 1e-9).label;
+  const R = CONFIG.ratings;
+  const s = Math.round(score * 1000) / 1000;
+  const hit = R.find(r => s >= r.min && s <= r.max);
+  if (hit) return hit;
+  const above = [...R].reverse().find(r => r.min > s);
+  const below = R.find(r => r.max < s);
+  if (!above) return R[0];
+  if (!below) return R[R.length - 1];
+  if (above.cond === below.cond) return R.find(r => r.cond === above.cond && r.base);
+  return below; // gap between two different conditions (not reachable at current weights)
 }
+
+function span(lo, hi) { return lo === hi ? `${lo}` : `${lo}-${hi}`; }
 
 let lastSummary = "";
 
@@ -301,6 +334,8 @@ function update() {
 
   if (!complete) {
     $("rating").textContent = "-";
+    $("effBlock").classList.add("hidden");
+    $("effWarn").classList.add("hidden");
     $("scoreLine").textContent = tooNew ? "Property is 12 years or newer." : "Complete the selections above.";
     $("copyBtn").disabled = true;
     return;
@@ -310,13 +345,24 @@ function update() {
     ? ext.total * (1 - CONFIG.interiorShare) + int.total * CONFIG.interiorShare
     : ext.total;
   const rating = ratingFor(overall);
+  const ay = parseInt($("assessYear").value, 10);
+  const [lo, hi] = rating.effAge;
+  const effAgeText = span(lo, hi);
+  const eybText = span(ay - lo, ay - hi);
 
-  $("rating").textContent = rating;
+  $("rating").textContent = `${rating.label} (${rating.code})`;
+  $("effAge").textContent = `${effAgeText} years`;
+  $("effYear").textContent = eybText;
+  $("effBlock").classList.remove("hidden");
   $("scoreLine").textContent = useInt ? "Based on exterior and interior." : "Based on exterior only.";
+  const over = lo > age;
+  $("effWarn").classList.toggle("hidden", !over);
+  if (over) $("effWarn").textContent = `Suggested effective age is higher than the actual age of ${age} years. Use appraiser judgment.`;
 
   const line = (s) => s.rows.map(r => `${r.name}: ${r.label} (${r.detail})`).join("; ");
   lastSummary =
-    `Condition calculator: ${rating}\n` +
+    `Condition calculator: ${rating.label} (${rating.code})\n` +
+    `Effective age ${effAgeText}, effective year built ${eybText}\n` +
     `Year built ${$("yearBuilt").value}, actual age ${age}\n` +
     `Exterior: ${line(ext)}` +
     (useInt ? `\nInterior: ${line(int)}` : "\nInterior: not available");
@@ -324,7 +370,7 @@ function update() {
 }
 
 function init() {
-  $("assessYear").value = new Date().getFullYear();
+  $("assessYear").value = CONFIG.defaultAssessmentYear;
   renderSection(CONFIG.exterior, $("exteriorComponents"));
   renderSection(CONFIG.interior, $("interiorComponents"));
   document.addEventListener("input", update);
