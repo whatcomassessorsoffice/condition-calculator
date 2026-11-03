@@ -104,7 +104,7 @@
 <div class="wrap">
   <header>
     <h1>Condition Calculator</h1>
-    <p>Whatcom County Assessor's Office. For residential properties over 12 years actual age. Effective ages follow the SFR Reval 6 guidelines.</p>
+    <p>Whatcom County Assessor's Office. For residential properties 20+ years actual age. Effective ages follow the SFR Reval 6 guidelines.</p>
   </header>
 
   <section class="card">
@@ -118,7 +118,7 @@
       </label>
       <div class="age-note" id="ageNote"></div>
     </div>
-    <div class="warn hidden" id="ageWarn">This calculator applies to properties over 12 years actual age. Use appraiser judgment for newer properties.</div>
+    <div class="warn hidden" id="ageWarn">This calculator applies to properties 20+ years actual age. Use appraiser judgment for newer properties.</div>
   </section>
 
   <section class="card" id="exteriorCard">
@@ -143,11 +143,16 @@
       </div>
     </div>
     <div class="score" id="scoreLine">Complete the selections above.</div>
-    <div class="warn hidden" id="effWarn"></div>
+    <div class="score hidden" id="capNote">Effective age capped at actual age.</div>
     <div class="buttons">
       <button id="copyBtn" disabled>Copy summary</button>
       <button id="resetBtn" class="secondary">Reset</button>
     </div>
+  </section>
+
+  <section class="card">
+    <h2>Poor condition</h2>
+    <p class="sub" style="margin:0">This calculator does not rate Poor. Homes with major deficiencies, including homes that may be uninhabitable, are assigned Poor by the appraiser using the Effective Age and Condition Guidelines.</p>
   </section>
 
   <footer>Guidance tool only. Final condition is the appraiser's determination.</footer>
@@ -159,7 +164,7 @@
 // Weights within each section must add up to 100.
 // ============================================================
 const CONFIG = {
-  minActualAge: 13, // calculator applies to properties over 12 years
+  minActualAge: 20, // calculator applies to properties 20+ years actual age
   interiorShare: 0.5, // share of overall score when interior info is used
 
   // Effective ages follow the Effective Age and Condition Guidelines
@@ -178,35 +183,33 @@ const CONFIG = {
     { min: 2.26, max: 2.50, cond: "AVG",  base: false, code: "AVG+",  label: "Average+",   effAge: [20, 20] },
     { min: 1.80, max: 2.25, cond: "AVG",  base: true,  code: "AVG",   label: "Average",    effAge: [26, 26] },
     { min: 1.51, max: 1.79, cond: "AVG",  base: false, code: "AVG-",  label: "Average-",   effAge: [31, 31] },
-    { min: 1.26, max: 1.50, cond: "FAIR", base: false, code: "FAIR+", label: "Fair+",      effAge: [32, 32] },
-    { min: 1.00, max: 1.25, cond: "FAIR", base: true,  code: "FAIR",  label: "Fair",       effAge: [35, 35] }
+    { min: 1.26, max: 1.50, cond: "FAIR", base: false, code: "FAIR+", label: "Fair+",      effAge: [32, 32], noCap: true },
+    { min: 1.00, max: 1.25, cond: "FAIR", base: true,  code: "FAIR",  label: "Fair",       effAge: [35, 35], noCap: true }
   ],
+  // Effective age is capped at actual age except for ratings marked noCap
+  // (Fair+ and Fair), where worn items pulled the condition down.
 
   exterior: [
-    { id: "roof", name: "Roof", weight: 30, options: [
+    { id: "roof", name: "Roof", weight: 33, options: [
       { score: 4, label: "Very good", detail: "0-10 years" },
       { score: 3, label: "Good", detail: "11-20 years" },
       { score: 2, label: "Average", detail: "21-30 years" },
       { score: 1, label: "Fair/Poor", detail: "31+ years or visibly worn" } ] },
-    { id: "windows", name: "Windows", weight: 20, options: [
+    { id: "windows", name: "Windows", weight: 22, options: [
       { score: 4, label: "Very good", detail: "0-10 years" },
       { score: 3, label: "Good", detail: "11-20 years" },
       { score: 2, label: "Average", detail: "20+ years" },
-      { score: 1, label: "Fair/Poor", detail: "Visibly damaged" } ] },
-    { id: "extPaint", name: "Paint", weight: 25, options: [
+      { score: 1, label: "Fair/Poor", detail: "Visibly worn" } ] },
+    { id: "extPaint", name: "Paint", weight: 28, options: [
       { score: 4, label: "Very good", detail: "0-6 years" },
       { score: 3, label: "Good", detail: "7-9 years" },
       { score: 2, label: "Average", detail: "10+ years" },
-      { score: 1, label: "Fair/Poor", detail: "Visibly damaged" } ] },
-    { id: "additional", name: "Additional improvements", weight: 15, options: [
+      { score: 1, label: "Fair/Poor", detail: "Visibly worn" } ] },
+    { id: "additional", name: "Additional improvements", weight: 17, options: [
       { score: 4, label: "High $", detail: "High cost or multiple items" },
       { score: 3, label: "Some", detail: "Some improvements" },
       { score: 2, label: "None", detail: "No improvements" },
-      { score: 1, label: "Negative", detail: "Negative items" } ] },
-    // Scored automatically from year built.
-    { id: "age", name: "Actual age", weight: 10, auto: true, ageBands: [
-      { maxAge: 19, score: 3, label: "Good", detail: "13-19 years" },
-      { maxAge: Infinity, score: 2, label: "Average", detail: "20+ years" } ] }
+      { score: 1, label: "Negative", detail: "Negative items" } ] }
   ],
 
   interior: [
@@ -241,17 +244,12 @@ function renderSection(list, container) {
   list.forEach(c => {
     const div = document.createElement("div");
     div.className = "component";
-    let body;
-    if (c.auto) {
-      body = `<div class="sub" id="autoAge" style="margin:0">Filled in from year built.</div>`;
-    } else {
-      body = `<div class="options" role="radiogroup" aria-label="${c.name}">` +
-        c.options.map(o => `
-          <label class="opt">
-            <input type="radio" name="${c.id}" value="${o.score}">
-            <span><b>${o.label}</b><small>${o.detail}</small></span>
-          </label>`).join("") + `</div>`;
-    }
+    const body = `<div class="options" role="radiogroup" aria-label="${c.name}">` +
+      c.options.map(o => `
+        <label class="opt">
+          <input type="radio" name="${c.id}" value="${o.score}">
+          <span><b>${o.label}</b><small>${o.detail}</small></span>
+        </label>`).join("") + `</div>`;
     div.innerHTML = `<div class="component-head">${c.name}</div>${body}`;
     container.appendChild(div);
   });
@@ -264,10 +262,6 @@ function actualAge() {
   return ay - yb;
 }
 
-function ageBand(age) {
-  const c = CONFIG.exterior.find(x => x.auto);
-  return c.ageBands.find(b => age <= b.maxAge);
-}
 
 function selected(c) {
   const el = document.querySelector(`input[name="${c.id}"]:checked`);
@@ -280,11 +274,7 @@ function sectionScore(list, age) {
   let total = 0, rows = [], complete = true;
   list.forEach(c => {
     let pick;
-    if (c.auto) {
-      pick = age != null && age >= CONFIG.minActualAge ? ageBand(age) : null;
-    } else {
-      pick = selected(c);
-    }
+    pick = selected(c);
     if (!pick) { complete = false; return; }
     const contrib = pick.score * c.weight / 100;
     total += contrib;
@@ -318,25 +308,18 @@ function update() {
   $("ageNote").textContent = age != null ? `Actual age: ${age} years` : "";
   $("ageWarn").classList.toggle("hidden", !tooNew);
 
-  const autoEl = $("autoAge");
-  if (autoEl) {
-    if (age == null) autoEl.textContent = "Filled in from year built.";
-    else if (tooNew) autoEl.textContent = "Not applicable: property is 12 years or newer.";
-    else { const b = ageBand(age); autoEl.textContent = `${age} years (${b.label})`; }
-  }
-
   const useInt = $("useInterior").checked;
   $("interiorBlock").classList.toggle("hidden", !useInt);
 
   const ext = sectionScore(CONFIG.exterior, age);
   const int = useInt ? sectionScore(CONFIG.interior, age) : null;
-  const complete = !tooNew && ext.complete && (!useInt || int.complete);
+  const complete = age != null && !tooNew && ext.complete && (!useInt || int.complete);
 
   if (!complete) {
     $("rating").textContent = "-";
     $("effBlock").classList.add("hidden");
-    $("effWarn").classList.add("hidden");
-    $("scoreLine").textContent = tooNew ? "Property is 12 years or newer." : "Complete the selections above.";
+    $("capNote").classList.add("hidden");
+    $("scoreLine").textContent = tooNew ? "Property is under 20 years old." : (age == null ? "Enter year built and complete the selections above." : "Complete the selections above.");
     $("copyBtn").disabled = true;
     return;
   }
@@ -346,7 +329,9 @@ function update() {
     : ext.total;
   const rating = ratingFor(overall);
   const ay = parseInt($("assessYear").value, 10);
-  const [lo, hi] = rating.effAge;
+  let [lo, hi] = rating.effAge;
+  const capped = !rating.noCap && lo > age;
+  if (capped) { lo = Math.min(lo, age); hi = Math.min(hi, age); }
   const effAgeText = span(lo, hi);
   const eybText = span(ay - lo, ay - hi);
 
@@ -355,14 +340,12 @@ function update() {
   $("effYear").textContent = eybText;
   $("effBlock").classList.remove("hidden");
   $("scoreLine").textContent = useInt ? "Based on exterior and interior." : "Based on exterior only.";
-  const over = lo > age;
-  $("effWarn").classList.toggle("hidden", !over);
-  if (over) $("effWarn").textContent = `Suggested effective age is higher than the actual age of ${age} years. Use appraiser judgment.`;
+  $("capNote").classList.toggle("hidden", !capped);
 
   const line = (s) => s.rows.map(r => `${r.name}: ${r.label} (${r.detail})`).join("; ");
   lastSummary =
     `Condition calculator: ${rating.label} (${rating.code})\n` +
-    `Effective age ${effAgeText}, effective year built ${eybText}\n` +
+    `Effective age ${effAgeText}${capped ? " (capped at actual age)" : ""}, effective year built ${eybText}\n` +
     `Year built ${$("yearBuilt").value}, actual age ${age}\n` +
     `Exterior: ${line(ext)}` +
     (useInt ? `\nInterior: ${line(int)}` : "\nInterior: not available");
